@@ -86,6 +86,14 @@ button:hover{border-color:var(--muted)}
 .seg.off{opacity:.4}
 .seg.off button{cursor:default}
 .kbd-wrap{position:relative}
+/* Link spectrum: the Spectrum's own canvas docks here, right above the keys and at the same width, so every peak stands over its key */
+.kb-spec{position:relative}
+.kb-spec[hidden]{display:none}
+#kbSpecSlot figure{display:flex;flex-direction:column-reverse}
+#kbSpecSlot figcaption{margin:0 0 6px}
+#kbSpecSlot #scSpec{height:150px;border-radius:8px 8px 0 0}
+#kbSpecOpt{top:26px;right:6px}
+[data-blk="keys"]:hover #kbSpecOpt{opacity:1}
 .kbd-scroll{overflow-x:auto;overflow-y:hidden}
 svg.kbd{display:block;margin:0 auto}
 svg.kbd .kn{font-family:var(--mono)}
@@ -397,10 +405,11 @@ nav.topbar #scHearL{font-size:12.5px;color:var(--muted)}
       <button class="pill" data-ly="heat" aria-pressed="true"><i style="background:var(--home)"></i>Most played</button>
       <button class="pill" data-ly="melody" aria-pressed="true"><i style="background:var(--melody)"></i>Melody</button>
       <button class="pill" data-ly="names" aria-pressed="true">Names</button>
-      <button class="pill" data-ly="axis" aria-pressed="false">Spectrum axis</button>
+      <button class="pill" data-ly="axis" aria-pressed="true">Link spectrum</button>
       <span class="tb-sep" aria-hidden="true"></span>
       <span class="seg" id="kbRange" role="group" aria-label="Keyboard range"><button data-v="61" class="on">61</button><button data-v="88">88</button><button data-v="fit">Fit piece</button></span>
     </div>
+    <div class="scope-grid kb-spec" id="kbSpecSlot" hidden><button class="opt-btn" id="kbSpecOpt" data-pop="scOpts2" aria-label="Spectrum options" aria-haspopup="true" aria-expanded="false" title="Spectrum options">⚙</button></div>
     <div class="kbd-wrap"><div class="kbd-scroll" id="keyboard"></div><span class="kbd-grip" id="kbGrip" role="button" aria-label="Resize the piano"></span><span class="kbd-tag" id="kbTag"></span></div>
     <div class="sc-guess" id="scGuessRow"><canvas id="scPcBars" aria-label="Most-played notes"></canvas><span id="scGuess">Listening…</span><button class="tool" id="scGuessUse" disabled>Use</button><button class="tool" id="scGuessRestart" data-help-title="Restart the guess" data-help="Forgets the notes played so far and starts guessing the scale again from the next notes. Use it when you change piece or key.">Restart</button></div>
     <div class="legend" id="legend"></div>
@@ -464,6 +473,9 @@ nav.topbar #scHearL{font-size:12.5px;color:var(--muted)}
     </div>
   </section>
 
+  <!-- Song map: the loop recorder + chord history. songmap.js fills this block (SongMap.init, further down) -->
+  <section class="panel" id="smPanel" data-blk="songmap"></section>
+
   <section class="panel chords-panel" data-blk="prog"><h2>Progression</h2><div class="chords" id="chords"></div></section>
 
   <section class="panel" data-blk="say"><h2>What's going on</h2><div id="say" class="say"></div><ul id="explain"></ul><p class="empty-hint" id="sayEmpty">Claude's explanation shows here. Ask about a piece to fill this.</p></section>
@@ -482,6 +494,7 @@ nav.topbar #scHearL{font-size:12.5px;color:var(--muted)}
 </div>
 <button class="hb-q" id="hbQ" aria-label="Show help" title="What's this?" style="display:none">?</button>
 
+<script src="songmap.js"></script>
 <script>
 // ---------- theory ----------
 const $ = id => document.getElementById(id);
@@ -696,6 +709,7 @@ function render(){
   $('diatonic').innerHTML=dia.length?dia.map((c,i)=>`<button class="dia" data-d="${i}"><span class="rn">${esc(c.roman)}</span><span class="sym">${esc(c.display)}</span></button>`).join(''):'<span class="muted">—</span>';
   document.querySelectorAll('.dia').forEach(b=>b.onclick=()=>{stopTimers();preview=dia[+b.dataset.d];render();playChord(preview);});
   if(typeof scIdleDraw==='function')scIdleDraw();   // the spectrum's note grid follows the scale right away
+  window.SongMap?.refresh();                        // and so do the Song map's colours and roman numerals (it only redraws when the scale changed)
 }
 function renderStaff(){const abc=state.abc||'';if(abc===lastAbc)return;lastAbc=abc;if(!abc){$('staff').innerHTML='<p class="empty-hint">The score shows here when Claude sends one.</p>';return;}
   if(window.ABCJS){$('staff').innerHTML='';ABCJS.renderAbc('staff',abc,{responsive:'resize',add_classes:true});}
@@ -782,10 +796,11 @@ function renderKbdOnly(){let ch=preview||chords[focus];if(!PN.ly.played&&ch&&ch=
 // It carries what the big keyboard and the slim piano under the spectrum used to show separately. PN.ly = which layers are drawn;
 // PN.axis = keys sit under their frequencies on the Spectrum's axis (same band and zoom) instead of the usual equal white keys;
 // PN.h = key height in px (set by the grip, never by what is played); PN.kw = white-key width in px (null = the keys fill the block's width)
-const PIANO_KEY='musicBoard.piano',PIANO_V=1,KB_H0=150,KB_H=[90,360],KB_W=[18,72],SC_BLK=pc=>pc===1||pc===3||pc===6||pc===8||pc===10;
-const PN={ly:{chord:true,scale:true,played:true,heat:true,melody:true,names:true},axis:false,h:KB_H0,kw:null};
-try{const s=JSON.parse(localStorage.getItem(PIANO_KEY));if(s&&s.v===PIANO_V){for(const k in PN.ly)if(typeof s.ly?.[k]==='boolean')PN.ly[k]=s.ly[k];
-  if(typeof s.axis==='boolean')PN.axis=s.axis;if(s.h>=KB_H[0]&&s.h<=KB_H[1])PN.h=Math.round(s.h);if(s.kw>=KB_W[0]&&s.kw<=KB_W[1])PN.kw=Math.round(s.kw);}}catch(e){}
+const PIANO_KEY='musicBoard.piano',PIANO_V=2,KB_H0=150,KB_H=[90,360],KB_W=[18,72],SC_BLK=pc=>pc===1||pc===3||pc===6||pc===8||pc===10;
+const PN={ly:{chord:true,scale:true,played:true,heat:true,melody:true,names:true},axis:true,h:KB_H0,kw:null};   // linked to the Spectrum by default
+// v1 was saved when the link was off by default: its layers and size are kept, the link takes the new default
+try{const s=JSON.parse(localStorage.getItem(PIANO_KEY));if(s&&(s.v===PIANO_V||s.v===1)){for(const k in PN.ly)if(typeof s.ly?.[k]==='boolean')PN.ly[k]=s.ly[k];
+  if(s.v===PIANO_V&&typeof s.axis==='boolean')PN.axis=s.axis;if(s.h>=KB_H[0]&&s.h<=KB_H[1])PN.h=Math.round(s.h);if(s.kw>=KB_W[0]&&s.kw<=KB_W[1])PN.kw=Math.round(s.kw);}}catch(e){}
 function pnSave(){try{localStorage.setItem(PIANO_KEY,JSON.stringify({v:PIANO_V,ly:PN.ly,axis:PN.axis,h:PN.h,kw:PN.kw}));}catch(e){}}
 let kbG=null,kbCw=0;   // the geometry on screen, and the width it was drawn for
 function kbGeom(lo,hi){const cw=Math.max(240,$('keyboard').clientWidth||0),H=PN.h,BH=Math.round(H*.62),ks=[];
@@ -812,17 +827,22 @@ function kbBandUpd(){const p=document.getElementById('kbBand'),G=kbG;if(!p||!G)r
       return m<=G.lo?0:m>=G.hi?G.tw:xa==null||xb==null?null:xa+(xb-xa)*(m-a);},x0=xf(SC.z.f0),x1=xf(SC.z.f1);
     if(x0!=null&&x1!=null&&x1-x0>4&&(x0>1||x1<G.tw-1))d=`M${x0.toFixed(1)},-1.5 v-3 H${x1.toFixed(1)} v3`;}
   if(p.getAttribute('d')!==d)p.setAttribute('d',d);}
+// Link spectrum on: the Spectrum's canvas (the same one, with its zoom, drag and readouts) and its ⚙ options move into the piano block, right above the keys,
+// and the emptied Spectrum block leaves the board. Off: both go back and the block returns to its place in the layout.
+function kbLinkApply(){const on=PN.axis,fig=$('scSpecFig'),slot=$('kbSpecSlot'),spec=document.querySelector('[data-blk="spec"]'),pop=$('scOpts2');
+  if(on){slot.appendChild(fig);slot.parentNode.appendChild(pop);}else{spec.querySelector('.scope-grid').appendChild(fig);spec.appendChild(pop);}
+  slot.hidden=!on;spec.style.display=on?'none':'';}
 function kbCtl(){document.querySelectorAll('#kbBar .pill').forEach(b=>b.setAttribute('aria-pressed',b.dataset.ly==='axis'?PN.axis:PN.ly[b.dataset.ly]));
   document.querySelectorAll('#kbRange button').forEach(b=>b.classList.toggle('on',b.dataset.v===kbRange));
-  $('kbRange').classList.toggle('off',PN.axis);$('kbKw').classList.toggle('off',PN.axis);   // on the spectrum's axis the band and the key width come from the Spectrum's zoom
+  $('kbRange').classList.toggle('off',PN.axis);$('kbKw').classList.toggle('off',PN.axis);   // linked to the spectrum the band and the key width come from the Spectrum's zoom
   $('kbKw').querySelector('[data-d="0"]').classList.toggle('on',!PN.axis&&!(PN.kw&&kbG&&PN.kw>kbG.fit));}
-$('kbBar').addEventListener('click',e=>{const b=e.target.closest('.pill');if(!b)return;const k=b.dataset.ly;if(k==='axis')PN.axis=!PN.axis;else PN.ly[k]=!PN.ly[k];pnSave();kbSig='';render();kbCtl();});
+$('kbBar').addEventListener('click',e=>{const b=e.target.closest('.pill');if(!b)return;const k=b.dataset.ly;if(k==='axis'){PN.axis=!PN.axis;optClose();kbLinkApply();layDom();layApply();}else PN.ly[k]=!PN.ly[k];pnSave();kbSig='';render();kbCtl();});
 $('kbKw').onclick=e=>{const b=e.target.closest('button');if(!b||PN.axis||!kbG)return;const d=+b.dataset.d,fit=Math.max(18,kbG.fit),w=Math.round((PN.kw&&PN.kw>fit?PN.kw:fit)+4*d);
   PN.kw=!d||w<=fit+1?null:Math.min(KB_W[1],w);pnSave();renderKbdOnly();kbCtl();layApply();};
 $('kbSizeReset').onclick=()=>{PN.h=KB_H0;PN.kw=null;pnSave();renderKbdOnly();kbCtl();layApply();};
 // the grip in the piano's bottom-right corner: drag down/up = key height, sideways = key width (wider keys scroll sideways); double-click = default size
 {const g=$('kbGrip');let d=null;
-  const tag=()=>{$('kbTag').textContent=`${PN.h} px high · ${PN.axis?'spectrum axis':PN.kw&&kbG&&PN.kw>kbG.fit?'keys '+PN.kw+' px wide':'keys fit the width'}`;};
+  const tag=()=>{$('kbTag').textContent=`${PN.h} px high · ${PN.axis?'linked to the spectrum':PN.kw&&kbG&&PN.kw>kbG.fit?'keys '+PN.kw+' px wide':'keys fit the width'}`;};
   g.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();e.stopPropagation();try{g.setPointerCapture(e.pointerId);}catch(_){}
     d={x:e.clientX,y:e.clientY,h:PN.h,w:kbG?.W||26,fit:Math.max(18,kbG?.fit||18),pid:e.pointerId};g.classList.add('on');document.body.classList.add('kb-sizing');tag();});
   g.addEventListener('pointermove',e=>{if(!d||e.pointerId!==d.pid)return;const dx=e.clientX-d.x;
@@ -832,6 +852,7 @@ $('kbSizeReset').onclick=()=>{PN.h=KB_H0;PN.kw=null;pnSave();renderKbdOnly();kbC
   const up=e=>{if(!d||e.pointerId!==d.pid)return;d=null;g.classList.remove('on');document.body.classList.remove('kb-sizing');pnSave();kbCtl();};
   g.addEventListener('pointerup',up);g.addEventListener('pointercancel',up);
   g.addEventListener('dblclick',()=>{PN.h=KB_H0;PN.kw=null;pnSave();renderKbdOnly();kbCtl();layApply();});}
+kbLinkApply();
 new ResizeObserver(()=>{if($('keyboard').clientWidth!==kbCw)renderKbdOnly();}).observe($('keyboard'));   // the keys are drawn in real px: redraw when the block's width changes
 kbCtl();
 
@@ -865,11 +886,12 @@ function liveUpdate(){scVoices();cmpSync();const ms=[...sounding];if(ms.length){
   render();
   clearTimeout(liveTimer);liveTimer=setTimeout(()=>{if(ms.length>1&&liveChord?.root&&midiHist[midiHist.length-1]!==liveChord.display){
     midiHist.push(liveChord.display);if(midiHist.length>10)midiHist.shift();renderMidi();}},350);}
-function noteOn(m,v=100){held.add(m);sounding.add(m);midiLastOn=performance.now();scNoteVel(m,v);scSeen(m,midiLastOn,'midi');cmpNoteOn(m,v);liveUpdate();}
+// (each of these also tells the Song map, which records them while Rec is on)
+function noteOn(m,v=100){held.add(m);sounding.add(m);midiLastOn=performance.now();scNoteVel(m,v);scSeen(m,midiLastOn,'midi');cmpNoteOn(m,v);window.SongMap?.noteOn(m,v,midiLastOn);liveUpdate();}
 // safety: forget every key (MIDI reconnect, octave shift or range change, tab back in focus, CC 120/123, or "Clear keys")
-function allNotesOff(){midiMap.clear();held.clear();sounding.clear();sustain=false;kbLast=null;liveUpdate();}
-function noteOff(m){held.delete(m);if(!sustain)sounding.delete(m);liveUpdate();}
-function pedal(on){sustain=on;if(!on){[...sounding].forEach(m=>{if(!held.has(m))sounding.delete(m);});liveUpdate();}}
+function allNotesOff(){midiMap.clear();held.clear();sounding.clear();sustain=false;kbLast=null;window.SongMap?.allOff();liveUpdate();}
+function noteOff(m){held.delete(m);if(!sustain)sounding.delete(m);window.SongMap?.noteOff(m);liveUpdate();}
+function pedal(on){sustain=on;window.SongMap?.pedal(on);if(!on){[...sounding].forEach(m=>{if(!held.has(m))sounding.delete(m);});liveUpdate();}}
 // octave shift: moves what the player plays by ±12/24 semitones (he plays at the top edge of the Casio). midiMap remembers original key → shifted note,
 // so a note-off always releases what its note-on started, even if the shift changed in between (no stuck notes)
 const SHIFT_KEY='musicBoard.midiShift',midiMap=new Map();let midiShift=0;
@@ -1539,6 +1561,7 @@ function helpKey(m){const n=spellPc(mod(m,12)),oct=Math.floor((m-LPC[n.letter]-n
   return [`Key ${n.name}${oct} · ${(440*2**((m-69)/12)).toFixed(1)} Hz`,b.join(' ')||'A key of the piano.'];}
 // [selector, title, text] or [selector, fn(el) → [title, text]]; first match wins, so specific entries come first
 const HELP=[
+ ['#smPanel [data-help]',el=>[el.dataset.helpTitle||'',el.dataset.help]],   // the Song map (songmap.js) carries its own help text on every control
  ['.blk-h','Move block','Drag this handle, or any empty part of the block, to move it anywhere on the board: into any column, or between full-width blocks. The layout is saved in this browser.'],
  ['.opt-btn','Options','Opens this block\'s extra settings in a small box. Click outside it, or press Esc, to close it. Your choices are remembered in this browser.'],
  ['.blk-rz','Resize block','Drag this corner: sideways snaps the width to the board\'s columns (up to full width), down or up sets the height. Double-click it to go back to the normal size.'],
@@ -1567,8 +1590,9 @@ const HELP=[
  ['#kbBar .pill[data-ly="heat"]','Filter: Most played','Shows or hides the gold glow on the keys you have played most in the last minute or so. The scale guess under the piano uses the same count.'],
  ['#kbBar .pill[data-ly="melody"]','Filter: Melody','Shows or hides the blue numbered circles: the melody notes of the chord in focus, in the order they are played.'],
  ['#kbBar .pill[data-ly="names"]','Filter: Names','Shows or hides the note names: a letter on every white key (each C with its octave number) and the name of each chord note.'],
- ['#kbBar .pill[data-ly="axis"]','Filter: Spectrum axis','Off: a normal piano, with a thin gold bracket above the keys marking the stretch the Spectrum is showing. On: every key moves under its own pitch on the Spectrum\'s axis and follows its zoom, so with the piano right above or below the Spectrum at the same width, a peak sits exactly over its key.'],
- ['#kbRange','Keyboard range','How many keys the piano shows. 61 (C2 to C7) and 88 (a full piano) never move, so the board stays still while you play. Fit piece zooms to the notes of this piece. Notes outside the range show as a small ◀ or ▶ tag at that edge with their names. Saved in this browser. It rests while Spectrum axis is on.'],
+ ['#kbBar .pill[data-ly="axis"]','Filter: Link spectrum','On: the Spectrum moves onto the piano, right above the keys, and every key sits under its own pitch, so a peak stands exactly over the key that makes it. Zoom or drag the spectrum and the keys follow; Follow works too. Off: a normal piano with equal keys, the Spectrum back in its own block, and a thin gold bracket above the keys marking the stretch it shows.'],
+ ['#kbSpecOpt','Spectrum options','The Spectrum\'s settings (zoom, band, level range, tilt, speed, peak line) while it is linked onto the piano.'],
+ ['#kbRange','Keyboard range','How many keys the piano shows. 61 (C2 to C7) and 88 (a full piano) never move, so the board stays still while you play. Fit piece zooms to the notes of this piece. Notes outside the range show as a small ◀ or ▶ tag at that edge with their names. Saved in this browser. It rests while Link spectrum is on: the keys then show the Spectrum\'s band.'],
  ['#kbBar','Piano controls','One row for the piano: play the chord, the progression or the scale; switch each layer of the piano on or off; choose how many keys to show. It scrolls sideways when the block is narrow. Everything is remembered in this browser.'],
  ['#kbGrip','Resize the piano','Drag this corner down or up to make the keys taller or shorter, and sideways to make them wider (the piano then scrolls sideways). Double-click it for the normal size. The size is remembered and never changes while you play.'],
  ['#kbKwL','Key width','Makes the keys wider or narrower. Wider than the block, the piano scrolls sideways. Fit makes the keys fill the block\'s width again.'],
@@ -1685,11 +1709,18 @@ $('hbX').onclick=()=>{hbS.hidden=true;hbApply();hbSave();};
 $('hbQ').onclick=()=>{hbS.hidden=false;hbApply();hbSave();};
 addEventListener('resize',hbApply);hbApply();helpShow(HELP_IDLE);
 
+// ---------- Song map (songmap.js): the loop recorder + chord history block. It is built here, before the layout measures the blocks ----------
+// "Use as progression" puts the take's chords on the board like a piece: it shows on the Recent pill and stays in the Recent list.
+function smUseProgression(p){const s={updated:new Date().toISOString().slice(0,19),eyebrow:'Song map',title:p.name,subtitle:'Chords found in your recording',
+    key:manualKey||state.key||p.key||'C major',chords:p.chords.map(c=>({symbol:c.symbol,bars:c.bars})),say:'',explanation:[],abc:''};
+  histAdd(s);viewing=s.title;state=s;focus=0;preview=null;stopTimers();build();render();}
+window.SongMap?.init({el:$('smPanel'),key:()=>key,scale:()=>scale||key,master:()=>{ac();return master;},CHORDS,SYM,MODE_OFFSET,LPC,useProgression:smUseProgression});
+
 // ---------- layout: one grid across the whole screen; Edit layout lets the player move and resize blocks; saved in this browser ----------
 // The number of columns comes from the board's width (about one per 360 px; one on phones). Each block in lay.order has
 // span = columns it takes (FULL = always the whole row), col = its first column (null = wherever it fits best), h = height in px (null = fits its content).
 const LAY_KEY='musicBoard.layout',LAY_V=3,ROW=2,GAP=22,MINW=360,FULL=12,board=$('board');
-const LAY_DEF=[{id:'keys',span:FULL},{id:'scope',span:1},{id:'spec',span:1},{id:'compare',span:2},{id:'circle',span:1},{id:'scale',span:1},{id:'prog',span:2},
+const LAY_DEF=[{id:'keys',span:FULL},{id:'scope',span:1},{id:'spec',span:1},{id:'compare',span:2},{id:'songmap',span:2},{id:'circle',span:1},{id:'scale',span:1},{id:'prog',span:2},
   {id:'help',span:1},{id:'say',span:1},{id:'score',span:2}].map(b=>({col:null,h:null,...b}));
 const blkEl=id=>document.querySelector(`[data-blk="${id}"]`);
 const layDefault=()=>({order:LAY_DEF.map(b=>({...b})),help:'float'});
@@ -1707,7 +1738,7 @@ try{const s=JSON.parse(localStorage.getItem(LAY_KEY));
     LAY_DEF.forEach((d,i)=>{if(seen.has(d.id))return;const j=i?o.findIndex(b=>b.id===LAY_DEF[i-1].id):-1;o.splice(j>=0?j+1:o.length,0,{...d});seen.add(d.id);});
     lay={order:o,help:s.help==='dock'?'dock':'float'};}}catch(e){lay=layDefault();}
 function laySave(){try{localStorage.setItem(LAY_KEY,JSON.stringify({v:LAY_V,order:lay.order,help:lay.help}));}catch(e){}}
-const layShown=it=>it.id!=='help'||lay.help==='dock';
+const layShown=it=>it.id==='help'?lay.help==='dock':!(it.id==='spec'&&PN.axis);   // the Spectrum block is off the board while it is linked onto the piano
 const rowsOf=el=>el&&el.offsetHeight?Math.ceil((el.offsetHeight+GAP)/ROW):0;
 const layCols=()=>innerWidth<=640?1:Math.max(1,Math.min(8,Math.floor((board.clientWidth+GAP)/(MINW+GAP))));
 // pack blocks in order, each under the columns it covers (2px rows); a block without a column goes where it sits highest
@@ -1722,7 +1753,7 @@ function laySizes(){for(const it of lay.order){if(!layShown(it)||drag?.id===it.i
 // a block that changes width changes height: measure again until it settles
 // guard: every known block is in the order exactly once and visible (after Reset, a restore, or anything else)
 function layEnsure(){const seen=new Set();lay.order=lay.order.filter(b=>LAY_DEF.some(d=>d.id===b.id)&&!seen.has(b.id)&&seen.add(b.id));
-  for(const d of LAY_DEF){if(!seen.has(d.id))lay.order.push({...d});const el=blkEl(d.id);if(el&&el.style.display==='none'&&d.id!=='help')el.style.display='';}
+  for(const d of LAY_DEF){if(!seen.has(d.id))lay.order.push({...d});const el=blkEl(d.id);if(el&&el.style.display==='none'&&d.id!=='help'&&layShown(d))el.style.display='';}
   for(const d of LAY_DEF)if(d.id!=='help'&&layShown(d)){const el=blkEl(d.id);if(el&&el.parentNode!==board)board.appendChild(el);}}
 function layApply(){layEnsure();cols=layCols();board.style.setProperty('--cols',cols);laySizes();let H=layHeights();
   for(let n=0;n<4;n++){const pos=layPlace(lay.order.filter(layShown),H,cols);

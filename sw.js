@@ -1,8 +1,8 @@
 // Tonos service worker for the standalone copy (GitHub Pages). build.py fills in the build stamp and the file list.
 // Goal: the installed app opens at once and works with no internet; a new version arrives the next time it is online.
-const BUILD = '20261116-023201';
+const BUILD = '20261116-024031';
 const CACHE = 'tonos-app';
-const SHELL = ["./", "index.html", "icons/icon-192.png", "icons/icon-512.png", "state.json", "manifest.webmanifest"];
+const SHELL = ["./", "index.html", "icons/icon-192.png", "songmap.js", "icons/icon-512.png", "state.json", "manifest.webmanifest"];
 const CDN = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdnjs.cloudflare.com'];
 const STATE_EVERY = 10 * 60 * 1000;      // the page asks for state.json every 0.9 s; the network is asked this often
 let stateChecked = 0;
