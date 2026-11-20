@@ -1,7 +1,7 @@
 {
-  "name": "Tonos",
-  "short_name": "Tonos",
-  "description": "Tonos (τόνος, \"tension\" → tone): a music copilot. Chords, scales, MIDI and live sound analysis.",
+  "name": "Friedrich MUSICIAN",
+  "short_name": "MUSICIAN",
+  "description": "Friedrich MUSICIAN (formerly Tonos): a music copilot. Chords, scales, MIDI and live sound analysis.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

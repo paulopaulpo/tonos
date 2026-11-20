@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tonos</title>
+<title>Friedrich MUSICIAN</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0f15">
 <link rel="icon" href="icons/icon-192.png">
@@ -484,7 +484,7 @@ nav.topbar #scHearL{font-size:12.5px;color:var(--muted)}
   <section class="panel" data-blk="scale"><h2 id="scaleTitle">Scale</h2><div id="scaleNotes" class="scale-notes"></div>
     <h3>Chords in this key <span class="muted">(click to hear)</span></h3><div id="diatonic" class="diatonic"></div></section>
   </main>
-  <footer>← / → move between chords · Space plays the chord · P plays the progression</footer>
+  <footer>← / → move between chords · Space plays and stops the recording (the chord, if there is none) · P plays the progression</footer>
 </div>
 
 <div class="helpbox" id="helpBox" role="note" aria-live="polite" data-blk="help">
@@ -598,11 +598,14 @@ function keySig(key){if(!key)return '';const OUT=[0,7,2,9,4,11,6,1,8,3,10,5];con
 // ---------- audio ----------
 let actx,master,timers=[];
 function ac(){if(!actx){actx=new (window.AudioContext||window.webkitAudioContext)();master=actx.createDynamicsCompressor();master.connect(actx.destination);}if(actx.state==='suspended')actx.resume();return actx;}
-function tone(midi,t0,dur=2.4,vel=0.16){const c=ac(),f=440*Math.pow(2,(midi-69)/12);const g=c.createGain(),lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=Math.min(6000,f*6);
+// the board's one piano voice. rel (optional, seconds): the key comes up then, and the note fades in about a fifth of a second instead of ringing to the end.
+// The Song map plays its takes with it, so a take sounds like the chord cards: the same 2.4 s ring, cut where each note was let go.
+function tone(midi,t0,dur=2.4,vel=0.16,rel=null){const c=ac(),f=440*Math.pow(2,(midi-69)/12);const g=c.createGain(),lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=Math.min(6000,f*6);
   const o1=c.createOscillator(),o2=c.createOscillator(),g2=c.createGain();o1.type='triangle';o2.type='sine';o1.frequency.value=f;o2.frequency.value=f*2;g2.gain.value=0.25;
-  o1.connect(lp);o2.connect(g2).connect(lp);lp.connect(g).connect(master);
+  o1.connect(lp);o2.connect(g2).connect(lp);lp.connect(g);
+  let end=dur;if(rel!=null&&rel<dur){const r=c.createGain();r.gain.setValueAtTime(1,t0+rel);r.gain.setTargetAtTime(0,t0+rel,0.06);g.connect(r).connect(master);end=Math.min(dur,rel+0.5);}else g.connect(master);
   g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(vel,t0+0.012);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
-  o1.start(t0);o2.start(t0);o1.stop(t0+dur+0.05);o2.stop(t0+dur+0.05);}
+  o1.start(t0);o2.start(t0);o1.stop(t0+end+0.05);o2.stop(t0+end+0.05);}
 function stopTimers(){timers.forEach(clearTimeout);timers=[];}
 function playChord(ch,at){if(!ch)return;const c=ac();const t=at??c.currentTime+0.02;[...ch.tones].sort((a,b)=>a.midi-b.midi).forEach((n,i)=>tone(n.midi,t+i*0.03));}
 function playProgression(){if(!chords.length)return;stopTimers();preview=null;const c=ac(),t0=c.currentTime+0.05;let t=0;
@@ -914,7 +917,7 @@ function onMidi(e){const[st,d1,d2]=e.data,c=st&0xf0;   // while Compare runs the
 async function midiInit(){
   if(!navigator.requestMIDIAccess){midiMsg='No MIDI in this browser · open the board in Chrome';renderMidi();return;}
   try{const acc=await navigator.requestMIDIAccess();const bind=()=>{const ins=[...acc.inputs.values()];ins.forEach(i=>i.onmidimessage=onMidi);
-      midiOn=ins.length>0;midiMsg=midiOn?'MIDI · '+ins.map(i=>i.name).join(', '):'MIDI · no keyboard found';allNotesOff();renderMidi();};bind();acc.onstatechange=bind;}
+      midiOn=ins.length>0;midiMsg=midiOn?'MIDI · '+ins.map(i=>i.name).join(', '):'MIDI allowed · no device online';allNotesOff();renderMidi();};bind();acc.onstatechange=bind;}
   catch(e){midiMsg='MIDI blocked · allow MIDI for this page';renderMidi();}}
 // test hook: names are the keys pressed on the Casio; they go through onMidi, so the octave shift applies like real MIDI
 window.__midiTest=(names,ms=900)=>{const a=names.map(n=>parseNote(n).midi);a.forEach(m=>onMidi({data:[0x90,m,100]}));setTimeout(()=>a.forEach(m=>onMidi({data:[0x80,m,0]})),ms);};
@@ -959,7 +962,7 @@ function scVoices(){const on=SC.on&&SC.src==='midi'&&SC.busOn;
 function scNoteVel(m,v){SC.vel[m]=v;if(SC.voices.has(m))scVoiceOff(m);} // re-struck note: restart its voice
 function scMidiMsg(){if(!(SC.on&&SC.src==='midi'))return;
   scMsg(!navigator.requestMIDIAccess||/blocked/i.test(midiMsg)?'MIDI only works in Chrome. The Claude app’s browser pane and Safari block it: open http://127.0.0.1:8765 in Chrome.'
-    :!midiOn?'No MIDI keyboard found. Plug in the CASIO by USB.':'');}
+    :!midiOn?'MIDI is allowed, but the Mac has no MIDI device online. Plug in the CASIO by USB and switch it on, or tick “Device is online” for the IAC Driver in Audio MIDI Setup.':'');}
 // ---------- detector parameters: every number the pitch detector can be tuned with, in one object ----------
 // The Compare block's report carries a copy, so a run can be judged against the values in force. Change them from the console with
 // detSet({clarity:0.65}) (saved in this browser, `musicBoard.det`), from the Compare block's ⚙, or here for new defaults; detReset() goes back to these.
@@ -1088,7 +1091,7 @@ function scTick(){if(!SC.on||!SC.an||SC.frozen)return;const x=SC.td,N=x.length,s
   // Follow learns from confident audio notes that lasted ≥ 150 ms (single notes and chord notes)
   if(SC.m!=null&&SC.lastPitch===now){const r=Math.round(SC.m);if(r!==SC.fN){SC.fN=r;SC.fT=now;}else if(now-SC.fT>=150)scSeen(r,now,'audio');}
   if(SC.poly&&SC.poly.t===now&&now-SC.poly.t0>=150)SC.poly.ms.forEach(m=>scSeen(m,now,'audio'));
-  scReadouts(now);kbOverlays();cmpFrame(now,rd,open,ran,fRaw,fOut);}
+  scReadouts(now);kbOverlays();cmpFrame(now,rd,open,ran,fRaw,fOut);smMicFeed(now,rd);}
 // marker opacity: full while detected, then a 1.5 s fade through the decay
 const scFade=t=>{const a=performance.now()-t;return a<150?1:Math.max(0,1-(a-150)/1500);};
 // mic: a new note needs 2 agreeing frames in a row; the same note glides like the other sources
@@ -1487,7 +1490,7 @@ function cmpRender(){const r=CMP.rep,s=r?.sum,big=$('cmpBig'),sub=$('cmpSub'),pc
   else if(!s){big.textContent='—';sub.textContent='MIDI is the truth, the mic is judged. Press Start compare, then play the clip in Ableton.';}
   else if(!s.heldFrames){big.textContent='—';sub.textContent='No MIDI note arrived in that run. Check the IAC bus and the track\'s MIDI To in Ableton.';warn=true;}
   else{big.textContent=pc(s.agreePct);const hid=s.frameGaps.longestMs>400;warn=hid;
-    sub.textContent=hid?`of the held time the mic agrees · but the page paused for up to ${(s.frameGaps.longestMs/1000).toFixed(1)} s: keep the Tonos window in view and run it again`
+    sub.textContent=hid?`of the held time the mic agrees · but the page paused for up to ${(s.frameGaps.longestMs/1000).toFixed(1)} s: keep the Friedrich MUSICIAN window in view and run it again`
       :`of the time a note is held, the mic shows it · ${s.notes.played} notes in ${cmpClock(s.durationMs)}${r.test?' · test run':''}`;
     const oo=Object.entries(s.octaveShift).sort((a,b)=>b[1]-a[1])[0],fN=s.falseNotes.reduce((a,x)=>a+x.inSilence,0);
     chips=chip('ok',`<b>${s.notes.found}/${s.notes.played}</b> notes found`,'Notes found','How many of the MIDI notes the mic showed at least once while they sounded.'+(s.notes.octaveOnly?` ${s.notes.octaveOnly} more showed only in the wrong octave.`:''))
@@ -1581,7 +1584,7 @@ const HELP=[
  ['#keySig','Key signature','How many sharps or flats the current scale has, and which ones.'],
  ['#status',()=>[$('status').classList.contains('live')?'Live':'Offline','Green: the board is listening for Claude\'s answers. Grey: the little server isn\'t running, so new answers won\'t arrive.']],
  ['.focus-name','Chord in focus','Its name, its roman numeral in the key (I = home chord, V = dominant…) and its bar. While you play MIDI it shows what you\'re playing, marked LIVE · MIDI.'],
- ['#btnChord','▶ Chord','Plays the chord in focus. Shortcut: Space.'],
+ ['#btnChord','▶ Chord','Plays the chord in focus. Shortcut: Space, when the Song map has no take selected (with a take, Space plays and stops that instead).'],
  ['#btnProg','▶ Progression','Plays all the chords in order with the melody, moving the focus as it goes. Shortcut: P.'],
  ['#btnScale','▶ Scale','Plays the scale once, from the tonic up an octave.'],
  ['#kbBar .pill[data-ly="chord"]','Filter: Chord','Shows or hides the notes of the chord in focus on the piano, coloured by their job: root, 3rd, 5th, 7th and colour tones.'],
@@ -1601,7 +1604,7 @@ const HELP=[
  ['#kbOctL','MIDI octave shift','Moves every note you play on the MIDI keyboard up or down by whole octaves (up to two each way). Handy when you play near the top or bottom of the Casio. The keyboard, the chord name, the history and the oscilloscope all follow. Saved in this browser.'],
  ['#midiOct','Octave shift on','Your MIDI notes are being moved by this many octaves. Set it back to 0 with Octave − / + next to Range.'],
  ['.midi-hist span',el=>['Played: '+el.textContent,'A chord you played on the MIDI keyboard. The last ten stay here, newest on the right.']],
- ['#midi','MIDI keyboard','Shows whether your USB keyboard (the CASIO) is connected. It only works in Chrome. Held keys get a red outline and an arrow, and the chord name appears above.'],
+ ['#midi','MIDI keyboard','Shows which MIDI devices the board is listening to: your USB keyboard (the CASIO) and the IAC bus from Ableton. It only works in Chrome. "No device online" means the Mac itself sees none: plug in the CASIO and switch it on, or tick "Device is online" for the IAC Driver in Audio MIDI Setup; the board picks it up by itself. Held keys get a red outline and an arrow, and the chord name appears above.'],
  ['.kbd-edge',el=>[el.dataset.edge==='lo'?'◀ Below the range':'Above the range ▶','These notes are lower or higher than the keys shown. Choose 88 in Range to see the whole piano. It turns red while you hold one.']],
  ['#keyboard [data-m]',el=>helpKey(+el.dataset.m)],
  ['#keyboard','Piano','One piano for everything: the chord in focus coloured by role, scale dots, the keys you hold and the notes the mic hears, a gold glow on the keys you play most, blue numbered melody notes and note names. Switch each layer with the pills above it. The thin gold bracket above the keys marks the stretch the Spectrum is showing.'],
@@ -1676,7 +1679,7 @@ const HELP=[
  ['#scaleNotes, #scaleTitle','Scale','The notes of the scale with their degree numbers (♭3 = a lowered third, and so on).'],
  ['.dia',el=>[(el.querySelector('.rn')?.textContent||'')+' · '+(el.querySelector('.sym')?.textContent||''),'The chord built on this degree using only notes of the scale. Click to hear it and see it on the keyboard.']],
  ['#diatonic','Chords in this key','The seven chords made only from scale notes, one on each degree. These are the "home team" chords.'],
- ['footer','Shortcuts','← and → move between chords, Space plays the chord, P plays the progression, and F freezes the oscilloscope.'],
+ ['footer','Shortcuts','← and → move between chords, Space plays the chord, P plays the progression, and F freezes the oscilloscope. Space belongs to the Song map first: it stops the metronome, a recording or a take that is playing; with all quiet it plays the selected take; with no take it plays the chord.'],
 ];
 function helpOf(el){if(!el||!el.closest)return HELP_IDLE;
   for(const [sel,a,b] of HELP){const m=el.closest(sel);if(m)return typeof a==='function'?a(m):[a,b];}
@@ -1714,7 +1717,36 @@ addEventListener('resize',hbApply);hbApply();helpShow(HELP_IDLE);
 function smUseProgression(p){const s={updated:new Date().toISOString().slice(0,19),eyebrow:'Song map',title:p.name,subtitle:'Chords found in your recording',
     key:manualKey||state.key||p.key||'C major',chords:p.chords.map(c=>({symbol:c.symbol,bars:c.bars})),say:'',explanation:[],abc:''};
   histAdd(s);viewing=s.title;state=s;focus=0;preview=null;stopTimers();build();render();}
-window.SongMap?.init({el:$('smPanel'),key:()=>key,scale:()=>scale||key,master:()=>{ac();return master;},CHORDS,SYM,MODE_OFFSET,LPC,useProgression:smUseProgression});
+// The Song map can also record from the microphone. Every 45 ms scTick hands the detector's result to smMicFeed, which turns it into note-on / note-off:
+// a note starts at the attack (the level jumped ≥ 6 dB since the last look), ends when the detector stops hearing it, and is struck again when a new attack
+// comes while the same note is still heard. Loudness becomes velocity. The mic hears one note or a simple chord, so this is rougher than MIDI, and has no pedal.
+const SMM={on:new Map(),prev:-120,rise:0,pk:-120,used:0};
+function smMicFeed(now,rd){const S=window.SongMap;if(!S)return;
+  if(!(SC.on&&!SC.frozen&&(SC.src!=='midi'||SC.testMic)&&S.wantsMic())){for(const m of SMM.on.keys())S.noteOff(m,now,'mic');SMM.on.clear();SMM.prev=rd;SMM.rise=0;SMM.used=0;return;}
+  if(rd-SMM.prev>=6&&rd>DET.gateDb){SMM.rise=now-22;SMM.pk=rd;SMM.used=0;}else if(rd>SMM.pk)SMM.pk=rd;SMM.prev=rd;
+  const fresh=SC.poly&&SC.poly.t===now?SC.poly.ms:SC.m!=null&&SC.lastPitch===now?[Math.round(SC.m)]:[];   // heard in this very tick
+  const cur=new Set(scLiveNotes(true).map(x=>x.m)),since=now-SMM.rise,own=since<400&&(!SMM.used||SMM.used===now),t0=own?SMM.rise:now-100,vel=Math.max(30,Math.min(124,Math.round(96+2.4*(SMM.pk+20))));
+  for(const m of cur){const o=SMM.on.get(m);
+    if(!o){S.noteOn(m,vel,t0,'mic');SMM.on.set(m,{on:t0,seen:now});if(own)SMM.used=now;}   // an attack belongs to the notes first heard together; a note that joins later starts when it is heard
+    else if(fresh.includes(m)){o.seen=now;if(SMM.rise>o.on+140&&since>=90){S.noteOff(m,SMM.rise-10,'mic');S.noteOn(m,vel,SMM.rise,'mic');o.on=SMM.rise;}}}
+  for(const[m,o]of SMM.on)if(!cur.has(m)){S.noteOff(m,o.seen+45,'mic');SMM.on.delete(m);}}
+// Rec asks for the mic when it records from it: if the board is not listening yet, switch the top bar to Mic and start it (Chrome asks for permission the first time)
+async function smMicStart(){if(SC.on&&(SC.src!=='midi'||SC.testMic))return true;if(CMP.on)return false;SC.src='mic';scCtl();scZSave();await scStart();return SC.on&&SC.src==='mic';}
+// test hook, no mic needed: silent tones go through the mic's filters and logic while the Song map records from the mic.
+// seq: [{at:ms, ms:length, hz:440 or [Hz…], decay:s, gain}]; opt: {metro:true, lead, tail, noise}. Resolves with the take.
+window.__smMicTest=(seq,opt={})=>new Promise(async res=>{const c=ac();scAnalyser();const into=scMicChain(),self=!SC.on,nodes=[],src0=SC.src,S=SongMap._.S,in0=S.input,rm0=S.recMetro;
+  if(self){SC.testOnly=true;SC.src='mic';scRun();}SC.testMic=true;SC.tests++;S.input='mic';S.recMetro=false;   // the test decides about the metronome itself (opt.metro)
+  const nb=c.createBuffer(1,c.sampleRate*2,c.sampleRate),nd=nb.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+  const ns=c.createBufferSource(),ng=c.createGain();ns.buffer=nb;ns.loop=true;ng.gain.value=10**((opt.noise??-58)/20);ns.connect(ng).connect(into);ns.start();
+  await new Promise(r=>setTimeout(r,opt.lead??700));if(!!opt.metro!==SongMap._.T.metro)SongMap.metronome(!!opt.metro);await SongMap.recStart();
+  const T=SongMap._.T,start=performance.now()+(T.mode==='armed'?200:T.origin-performance.now());let end=0;
+  for(const s of seq){end=Math.max(end,s.at+s.ms);setTimeout(()=>{const fs=[].concat(s.hz),gn=c.createGain(),t=c.currentTime;gn.gain.value=s.gain??0.3;gn.connect(into);
+      fs.forEach(f=>[1,2,3,4].forEach(k=>{const o=c.createOscillator(),og=c.createGain();o.frequency.value=f*k;og.gain.value=1/(k*fs.length);o.connect(og).connect(gn);o.start(t);o.stop(t+s.ms/1000);nodes.push(o,og);}));
+      gn.gain.setTargetAtTime(0.0001,t+0.03,s.decay??0.6);nodes.push(gn);},start-performance.now()+s.at);}
+  setTimeout(()=>{SongMap.recStop();if(opt.metro)SongMap.metronome(false);ns.stop();[ns,ng,...nodes].forEach(n=>{try{n.disconnect();}catch(e){}});SC.tests--;SC.testMic=null;S.input=in0;S.recMetro=rm0;
+    if(self&&SC.testOnly&&!SC.tests){scStop();SC.src=src0;scCtl();}res(SongMap._.cur);},start-performance.now()+end+(opt.tail??700));});
+window.SongMap?.init({el:$('smPanel'),key:()=>key,scale:()=>scale||key,master:()=>{ac();return master;},CHORDS,SYM,MODE_OFFSET,LPC,useProgression:smUseProgression,
+  midiOn:()=>midiOn,micStart:smMicStart});
 
 // ---------- layout: one grid across the whole screen; Edit layout lets the player move and resize blocks; saved in this browser ----------
 // The number of columns comes from the board's width (about one per 360 px; one on phones). Each block in lay.order has
@@ -1852,10 +1884,15 @@ addEventListener('scroll',()=>{if(optOpen)optPlace();},{passive:true});addEventL
 $('btnChord').onclick=()=>playChord(preview||chords[focus]);
 $('btnProg').onclick=playProgression;
 $('btnScale').onclick=playScale;
+// Space is the Song map's play / stop key. If it is recording (armed, counting in or recording), playing a take, or its metronome is ticking,
+// Space stops all of that and does nothing else. With everything quiet it plays the selected take. Only when there is no take does Space play the chord in focus.
+function smSpaceStop(){const sm=window.SongMap,T=sm&&sm._&&sm._.T;if(!T)return false;
+  if(T.mode!=='idle'||T.metro){sm.stop();if(T.metro)sm.metronome(false);return true;}
+  if(sm._.cur){sm.play();return T.mode==='play';}return false;}
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
   if(e.key==='ArrowRight'&&chords.length){stopTimers();preview=null;focus=(focus+1)%chords.length;render();playChord(chords[focus]);e.preventDefault();}
   else if(e.key==='ArrowLeft'&&chords.length){stopTimers();preview=null;focus=(focus-1+chords.length)%chords.length;render();playChord(chords[focus]);e.preventDefault();}
-  else if(e.key===' '){playChord(preview||chords[focus]);e.preventDefault();}
+  else if(e.key===' '){if(!smSpaceStop())playChord(preview||chords[focus]);e.preventDefault();}
   else if(e.key==='p'||e.key==='P')playProgression();
   else if((e.key==='f'||e.key==='F')&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&SC.on){scFreeze(!SC.frozen);e.preventDefault();}});
 render();poll();setInterval(poll,900);midiInit();
